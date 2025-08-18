@@ -24,10 +24,10 @@ torch-summary
 pygame
 gitpython
 scikit-video
-functorch
+# functorch
 opencv-python
 moviepy
-hydra
+hydra-core
 urdfpy
 pybullet
 dirsync

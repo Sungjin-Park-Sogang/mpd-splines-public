@@ -11,7 +11,10 @@ import seaborn
 
 from mpd.parametric_trajectory.trajectory_bspline import ParametricTrajectoryBspline
 from mpd.paths import DATASET_BASE_DIR
-from pb_ompl.pb_ompl import fit_bspline_to_path
+try:
+    from pb_ompl.pb_ompl import fit_bspline_to_path
+except ImportError:
+    from mpd.inference.pb_ompl_mock import fit_bspline_to_path
 from torch_robotics.isaac_gym_envs.motion_planning_envs import (
     MotionPlanningIsaacGymEnv,
     MotionPlanningControllerIsaacGym,

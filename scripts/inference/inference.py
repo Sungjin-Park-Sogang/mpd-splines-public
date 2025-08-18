@@ -1,7 +1,7 @@
 import time
 from functools import partial
 
-import isaacgym
+# import isaacgym
 
 
 from dotmap import DotMap
@@ -18,10 +18,10 @@ from experiment_launcher import single_experiment_yaml, run_experiment
 from mpd.inference.inference import EvaluationSamplesGenerator, GenerativeOptimizationPlanner, render_results
 from mpd.metrics.metrics import PlanningMetricsCalculator
 from mpd.utils.loaders import get_planning_task_and_dataset, load_params_from_yaml, save_to_yaml
-from torch_robotics.isaac_gym_envs.motion_planning_envs import (
-    MotionPlanningIsaacGymEnv,
-    MotionPlanningControllerIsaacGym,
-)
+# from torch_robotics.isaac_gym_envs.motion_planning_envs import (
+#     MotionPlanningIsaacGymEnv,
+#     MotionPlanningControllerIsaacGym,
+# )
 from torch_robotics.robots import RobotPanda
 from torch_robotics.torch_kinematics_tree.utils.files import get_robot_path
 from torch_robotics.torch_utils.seed import fix_random_seed
@@ -237,29 +237,29 @@ def experiment(
 
         ############################################################################################################
         # Evaluate and show in IsaacGym
-        isaacgym_statistics = None
-        if run_evaluation_issac_gym and results_single_plan.q_trajs_pos_valid is not None:
-            ########################
-            motion_planning_isaac_env.ee_pose_goal = planning_task.robot.get_EE_pose(
-                to_torch(q_pos_goal.unsqueeze(0), device), flatten_pos_quat=True, quat_xyzw=True
-            ).squeeze(0)
+        # isaacgym_statistics = None
+        # if run_evaluation_issac_gym and results_single_plan.q_trajs_pos_valid is not None:
+        #     ########################
+        #     motion_planning_isaac_env.ee_pose_goal = planning_task.robot.get_EE_pose(
+        #         to_torch(q_pos_goal.unsqueeze(0), device), flatten_pos_quat=True, quat_xyzw=True
+        #     ).squeeze(0)
 
-            # Execute all valid trajectories
-            if results_single_plan.q_trajs_pos_valid.shape[0] > 0:
-                q_trajs_pos = results_single_plan.q_trajs_pos_valid.movedim(1, 0)  # horizon, batch, D
-                isaacgym_statistics = motion_planning_controller_isaac_gym.execute_trajectories(
-                    q_trajs_pos,
-                    q_pos_starts=q_trajs_pos[0],
-                    q_pos_goal=q_trajs_pos[-1][0],  # add steps for better visualization
-                    n_pre_steps=5 if render_isaacgym_viewer or render_isaacgym_movie else 0,
-                    n_post_steps=5 if render_isaacgym_viewer or render_isaacgym_movie else 0,
-                    stop_robot_if_in_contact=False,
-                    make_video=render_isaacgym_movie,
-                    video_duration=args_inference.trajectory_duration,
-                    video_path=os.path.join(results_dir, f"isaacgym-{idx_sg:03d}.mp4"),
-                    make_gif=False,
-                )
-            results_single_plan.isaacgym_statistics = isaacgym_statistics
+        #     # Execute all valid trajectories
+        #     if results_single_plan.q_trajs_pos_valid.shape[0] > 0:
+        #         q_trajs_pos = results_single_plan.q_trajs_pos_valid.movedim(1, 0)  # horizon, batch, D
+        #         isaacgym_statistics = motion_planning_controller_isaac_gym.execute_trajectories(
+        #             q_trajs_pos,
+        #             q_pos_starts=q_trajs_pos[0],
+        #             q_pos_goal=q_trajs_pos[-1][0],  # add steps for better visualization
+        #             n_pre_steps=5 if render_isaacgym_viewer or render_isaacgym_movie else 0,
+        #             n_post_steps=5 if render_isaacgym_viewer or render_isaacgym_movie else 0,
+        #             stop_robot_if_in_contact=False,
+        #             make_video=render_isaacgym_movie,
+        #             video_duration=args_inference.trajectory_duration,
+        #             video_path=os.path.join(results_dir, f"isaacgym-{idx_sg:03d}.mp4"),
+        #             make_gif=False,
+        #         )
+        #     results_single_plan.isaacgym_statistics = isaacgym_statistics
 
         ############################################################################################################
         # Compute motion planning metrics
@@ -270,8 +270,8 @@ def experiment(
         print(f"t_generator: {results_single_plan.t_generator:.3f} sec")
         print(f"t_guide: {results_single_plan.t_guide:.3f} sec")
 
-        print(f"isaacgym_statistics:")
-        pprint(results_single_plan.isaacgym_statistics)
+        # print(f"isaacgym_statistics:")
+        # pprint(results_single_plan.isaacgym_statistics)
 
         print(f"metrics:")
         pprint(results_single_plan.metrics)

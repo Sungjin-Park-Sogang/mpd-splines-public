@@ -15,7 +15,10 @@ from tqdm import tqdm
 
 from mpd.datasets.normalization import DatasetNormalizer
 from mpd.datasets.utils import CPU_Unpickler
-from pb_ompl.pb_ompl import fit_bspline_to_path
+try:
+    from pb_ompl.pb_ompl import fit_bspline_to_path
+except ImportError:
+    from mpd.inference.pb_ompl_mock import fit_bspline_to_path
 from torch_robotics import robots
 from torch_robotics.robots import RobotPointMass2D
 from torch_robotics.torch_kinematics_tree.geometrics.utils import (

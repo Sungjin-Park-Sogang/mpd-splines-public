@@ -1,7 +1,10 @@
 import einops
 from scipy import ndimage
 
-import isaacgym
+try:
+    import isaacgym
+except ImportError:
+    isaacgym = None
 import matplotlib
 import numpy as np
 import torch

@@ -12,8 +12,15 @@ from sklearn.gaussian_process.kernels import RBF
 
 from mpd.models import GaussianDiffusionModel, guide_gradient_steps, CVAEModel
 from mpd.utils.loaders import load_params_from_yaml
-from pb_ompl.pb_ompl import add_box, fit_bspline_to_path
-from scripts.generate_data.generate_trajectories import GenerateDataOMPL
+try:
+    from pb_ompl.pb_ompl import add_box, fit_bspline_to_path
+except ImportError:
+    from mpd.inference.pb_ompl_mock import add_box, fit_bspline_to_path
+
+try:
+    from scripts.generate_data.generate_trajectories import GenerateDataOMPL
+except ImportError:
+    from mpd.inference.generate_data_mock import GenerateDataOMPLMock as GenerateDataOMPL
 from mpd.inference.cost_guides import CostGuideManagerParametricTrajectory, NoCostException
 from torch_robotics.torch_utils.torch_timer import TimerCUDA
 from torch_robotics.torch_utils.torch_utils import (

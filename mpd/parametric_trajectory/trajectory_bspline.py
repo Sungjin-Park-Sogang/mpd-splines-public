@@ -1,4 +1,7 @@
-import isaacgym
+try:
+    import isaacgym
+except ImportError:
+    isaacgym = None
 
 from functools import partial
 from typing import Tuple

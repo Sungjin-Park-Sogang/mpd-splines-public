@@ -1,12 +1,6 @@
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DEPS_DIR="${THIS_DIR}/deps"
-ISAACGYM_DIR="${DEPS_DIR}/isaacgym"
-
-if [ ! -d $ISAACGYM_DIR ]; then
-  echo "$ISAACGYM_DIR does not exist."
-  exit
-fi
 
 git submodule update --init --recursive --progress
 
@@ -24,21 +18,19 @@ conda activate mpd-splines
 conda config --add channels conda-forge
 conda config --set channel_priority strict
 
-# https://github.com/AUTOMATIC1111/stable-diffusion-webui/issues/15863#issuecomment-2125026282
-pip install setuptools==69.5.1
+pip install setuptools
 
-conda install -c "nvidia/label/cuda-11.8.0" cuda-toolkit -y
-conda install -c conda-forge cudnn==8.9.7.29 -y
+conda install nvidia/label/cuda-12.8.0::cuda-toolkit
+conda install conda-forge::cudnn
 
-pip install torch==2.0.0+cu118 torchvision==0.15.1+cu118 --index-url https://download.pytorch.org/whl/cu118
+pip install torch torchvision
+
 
 conda env config vars set CUDA_HOME=""
 conda activate mpd-splines
 
 echo "-------> Installing experiment_launcher"
 cd ${DEPS_DIR}/experiment_launcher            && pip install -e .
-echo "-------> Installing isaacgym"
-cd ${DEPS_DIR}/isaacgym/python                && pip install -e .
 echo "-------> Installing theseus/torchkin"
 cd ${DEPS_DIR}/theseus/torchkin               && pip install -e .
 
