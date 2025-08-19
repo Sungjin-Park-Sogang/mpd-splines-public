@@ -45,16 +45,17 @@ def experiment(
     selection_start_goal: str = "validation",  # training, validation/test
     ########################################################################
     # number of start and goal states to evaluate
-    n_start_goal_states: int = 1,
+    n_start_goal_states: int = 3,
     ########################################################################
     save_results_single_plan_low_mem: bool = False,
     ########################################################################
     # Visualization options
-    render_joint_space_time_iters: bool = True,
+    render_joint_space_time_iters: bool = False,  # Disable to avoid ffmpeg issues
     render_joint_space_env_iters: bool = False,
     render_env_robot_opt_iters: bool = False,
     render_env_robot_trajectories: bool = False,
     render_pybullet: bool = False,
+    render_pybullet_trajectories: bool = True,  # Enable PyBullet rendering instead
     draw_collision_spheres: bool = False,
     run_evaluation_issac_gym: bool = False,
     render_isaacgym_viewer: bool = False,
@@ -127,7 +128,7 @@ def experiment(
         planner="RRTConnect",
         tensor_args=tensor_args,
         debug=debug,
-        render_pybullet=render_pybullet,
+        render_pybullet=render_pybullet or render_pybullet_trajectories,  # Enable GUI mode if any PyBullet rendering is requested
         **args_inference,
     )
 
@@ -299,21 +300,22 @@ def experiment(
         ############################################################################################################
         # Render sampling results
 
-        # 에러가 있으므로 일단 제외
-        # render_results(
-        #     args_inference,
-        #     planning_task,
-        #     q_pos_start,
-        #     q_pos_goal,
-        #     results_single_plan,
-        #     idx_sg,
-        #     results_dir,
-        #     render_joint_space_time_iters=render_joint_space_time_iters,
-        #     render_joint_space_env_iters=render_joint_space_env_iters,
-        #     render_planning_env_robot_opt_iters=render_env_robot_opt_iters,
-        #     render_planning_env_robot_trajectories=render_env_robot_trajectories,
-        #     debug=debug,
-        # )
+        # Render sampling results with enhanced PyBullet support
+        render_results(
+            args_inference,
+            planning_task,
+            q_pos_start,
+            q_pos_goal,
+            results_single_plan,
+            idx_sg,
+            results_dir,
+            render_joint_space_time_iters=render_joint_space_time_iters,
+            render_joint_space_env_iters=render_joint_space_env_iters,
+            render_planning_env_robot_opt_iters=render_env_robot_opt_iters,
+            render_planning_env_robot_trajectories=render_env_robot_trajectories,
+            render_pybullet_trajectories=render_pybullet_trajectories,
+            debug=debug,
+        )
 
         ############################################################################################################
         # empty memory

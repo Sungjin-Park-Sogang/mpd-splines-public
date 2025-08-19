@@ -173,6 +173,7 @@ def render_results(
     render_joint_space_env_iters=False,
     render_planning_env_robot_opt_iters=False,
     render_planning_env_robot_trajectories=False,
+    render_pybullet_trajectories=False,
     debug=False,
     **kwargs,
 ):
@@ -288,6 +289,166 @@ def render_results(
             anim_time=args_inference.trajectory_duration,
             filter_joint_limits_vel_acc=True,
         )
+
+    # PyBullet trajectory rendering (after motion generation)
+    if render_pybullet_trajectories and results_single_plan.q_trajs_pos_best is not None:
+        try:
+            from torch_robotics.torch_utils.torch_utils import to_numpy
+            import pybullet as p
+            import time
+            
+            print("Rendering generated trajectory with PyBullet...")
+            
+            # Create new PyBullet client for visualization (separate from mock client)
+            import pybullet_utils.bullet_client as bc
+            viz_client = bc.BulletClient(connection_mode=p.GUI)
+            viz_client.setGravity(0, 0, 0)
+            
+            # Set PyBullet data path to find default URDFs
+            import pybullet_data
+            viz_client.setAdditionalSearchPath(pybullet_data.getDataPath())
+            
+            # Setup camera
+            viz_client.resetDebugVisualizerCamera(
+                cameraDistance=2.5,
+                cameraYaw=50,
+                cameraPitch=-35,
+                cameraTargetPosition=[0, 0, 0.5]
+            )
+            viz_client.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+            viz_client.configureDebugVisualizer(p.COV_ENABLE_TINY_RENDERER, 0)
+            
+            # Load ground plane (optional)
+            try:
+                ground_id = viz_client.loadURDF("plane.urdf", [0, 0, -0.1])
+                print("Loaded ground plane from plane.urdf")
+            except:
+                # Create a simple ground plane if URDF not found
+                try:
+                    ground_shape = viz_client.createCollisionShape(
+                        p.GEOM_BOX, halfExtents=[5, 5, 0.1]
+                    )
+                    ground_visual = viz_client.createVisualShape(
+                        p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[0.5, 0.5, 0.5, 1]
+                    )
+                    ground_id = viz_client.createMultiBody(
+                        baseMass=0,
+                        baseCollisionShapeIndex=ground_shape,
+                        baseVisualShapeIndex=ground_visual,
+                        basePosition=[0, 0, -0.1]
+                    )
+                    print("Created custom ground plane")
+                except Exception as e:
+                    print(f"Could not create ground plane: {e}")
+                    if debug:
+                        print(f"Ground plane error details: {e}")
+            
+            # Load robot
+            robot_id = None
+            if hasattr(planning_task.robot, 'robot_urdf_file'):
+                try:
+                    robot_urdf_file = planning_task.robot.robot_urdf_file
+                    print(f"Loading robot URDF: {robot_urdf_file}")
+                    robot_id = viz_client.loadURDF(
+                        robot_urdf_file,
+                        basePosition=[0, 0, 0],
+                        useFixedBase=True
+                    )
+                    print(f"Successfully loaded robot with {viz_client.getNumJoints(robot_id)} joints")
+                except Exception as e:
+                    print(f"Error loading robot URDF: {e}")
+                    robot_id = None
+            else:
+                print("Warning: No robot URDF file found")
+            
+            # Convert trajectories to numpy
+            q_traj_best_np = to_numpy(results_single_plan.q_trajs_pos_best)
+            q_start_np = to_numpy(q_pos_start)
+            q_goal_np = to_numpy(q_pos_goal)
+            
+            if robot_id is not None:
+                # Set robot to start configuration
+                print("Setting robot to start configuration...")
+                num_joints = min(len(q_start_np), viz_client.getNumJoints(robot_id))
+                for joint_idx in range(num_joints):
+                    viz_client.resetJointState(robot_id, joint_idx, q_start_np[joint_idx])
+                viz_client.stepSimulation()
+                
+                print("Press Enter to start trajectory playback...")
+                input()
+                
+                # Render trajectory
+                print(f"Playing trajectory with {len(q_traj_best_np)} waypoints...")
+                trajectory_lines = []
+                
+                for i, q_pos in enumerate(q_traj_best_np):
+                    # Set joint positions
+                    for joint_idx in range(num_joints):
+                        viz_client.resetJointState(robot_id, joint_idx, q_pos[joint_idx])
+                    
+                    # Get end-effector position for path drawing
+                    if i > 0:
+                        try:
+                            prev_link_state = viz_client.getLinkState(robot_id, num_joints - 1)
+                            curr_link_state = viz_client.getLinkState(robot_id, num_joints - 1)
+                            if i == 1:  # First line segment
+                                prev_pos = prev_link_state[0]
+                            else:
+                                prev_pos = trajectory_lines[-1] if trajectory_lines else prev_link_state[0]
+                            
+                            curr_pos = curr_link_state[0]
+                            line_id = viz_client.addUserDebugLine(
+                                prev_pos, curr_pos,
+                                lineColorRGB=[1, 0, 0], lineWidth=3
+                            )
+                            trajectory_lines.append(curr_pos)
+                        except:
+                            pass
+                    
+                    viz_client.stepSimulation()
+                    time.sleep(0.05)  # Slow playback
+                    
+                    if i % 20 == 0:
+                        print(f"Progress: {i+1}/{len(q_traj_best_np)}")
+                
+                print("Trajectory playback completed.")
+                
+                # Save screenshot
+                screenshot_path = os.path.join(results_dir, f"pybullet_trajectory_{idx:03d}.png")
+                width, height = 1920, 1080
+                view_matrix = viz_client.computeViewMatrixFromYawPitchRoll(
+                    cameraTargetPosition=[0, 0, 0.5],
+                    distance=2.5, yaw=50, pitch=-35, roll=0, upAxisIndex=2
+                )
+                proj_matrix = viz_client.computeProjectionMatrixFOV(
+                    fov=60, aspect=width/height, nearVal=0.1, farVal=100.0
+                )
+                (_, _, px, _, _) = viz_client.getCameraImage(
+                    width=width, height=height,
+                    viewMatrix=view_matrix, projectionMatrix=proj_matrix
+                )
+                
+                # Save image
+                import numpy as np
+                rgb_array = np.array(px, dtype=np.uint8).reshape((height, width, 4))[:, :, :3]
+                import PIL.Image as Image
+                img = Image.fromarray(rgb_array)
+                img.save(screenshot_path)
+                print(f"Screenshot saved: {screenshot_path}")
+            else:
+                print("Warning: Could not load robot URDF")
+            
+            print("Press Enter to close PyBullet...")
+            input()
+            
+            # Clean up
+            viz_client.disconnect()
+            
+        except Exception as e:
+            print(f"Error during PyBullet rendering: {e}")
+            if debug:
+                import traceback
+                traceback.print_exc()
 
     if debug:
         plt.show()

@@ -13,6 +13,9 @@ class MockPbOMPLInterface:
     def __init__(self, robot_tr, pybullet_client):
         self.robot_tr = robot_tr
         self.pybullet_client = pybullet_client
+        self.robot = None  # Store robot for compatibility
+        self.robot_id = None
+        self._setup_robot()
         
     def is_state_valid(self, q_pos):
         """
@@ -77,6 +80,66 @@ class MockPbOMPLInterface:
             print(f"Warning: Could not compute EE pose: {e}")
             # Return a default pose
             return np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0, 1.0])
+    
+    def _setup_robot(self):
+        """Setup robot in PyBullet for visualization"""
+        try:
+            # Try to load robot URDF if available
+            if hasattr(self.robot_tr, 'robot_urdf_file'):
+                robot_urdf_path = self.robot_tr.robot_urdf_file
+                self.robot_id = self.pybullet_client.loadURDF(
+                    robot_urdf_path,
+                    basePosition=[0, 0, 0],
+                    useFixedBase=True
+                )
+                # Create mock robot object with num_dim attribute
+                class MockRobot:
+                    def __init__(self, num_dim):
+                        self.num_dim = num_dim
+                
+                # Get number of joints from PyBullet
+                num_joints = self.pybullet_client.getNumJoints(self.robot_id)
+                self.robot = MockRobot(num_joints)
+                
+                print(f"Loaded robot URDF: {robot_urdf_path} with {num_joints} joints")
+            else:
+                print("Warning: No robot URDF file available for visualization")
+        except Exception as e:
+            print(f"Warning: Could not load robot URDF: {e}")
+    
+    def execute(self, q_pos_path, sleep_time=0.05):
+        """
+        Execute trajectory by moving robot through joint positions
+        """
+        if self.robot_id is None:
+            print("Warning: No robot loaded for trajectory execution")
+            return
+            
+        print(f"Executing trajectory with {len(q_pos_path)} waypoints...")
+        
+        for i, q_pos in enumerate(q_pos_path):
+            # Set joint positions
+            num_joints = len(q_pos)
+            for joint_idx in range(num_joints):
+                self.pybullet_client.resetJointState(
+                    self.robot_id,
+                    joint_idx,
+                    q_pos[joint_idx]
+                )
+            
+            # Update visualization
+            self.pybullet_client.stepSimulation()
+            
+            # Sleep for smooth animation
+            if sleep_time > 0:
+                import time
+                time.sleep(sleep_time)
+            
+            # Print progress
+            if i % 10 == 0:
+                print(f"Trajectory progress: {i+1}/{len(q_pos_path)}")
+        
+        print("Trajectory execution completed")
 
 
 class GenerateDataOMPLMock:
@@ -103,11 +166,17 @@ class GenerateDataOMPLMock:
         self.tensor_args = tensor_args
         self.debug = debug
         
-        # Setup minimal pybullet client
+        # Setup pybullet client with enhanced visualization
+        self.pybullet_mode = pybullet_mode
+        # Always use DIRECT mode for GenerateDataOMPLMock to avoid conflicts
         self.pybullet_client = bullet_client.BulletClient(
-            connection_mode=p.GUI if pybullet_mode == "GUI" else p.DIRECT
+            connection_mode=p.DIRECT
         )
         self.pybullet_client.setGravity(0, 0, 0)
+        
+        # Store loaded robot and environment objects
+        self.robot_id = None
+        self.environment_objects = []
         
         # Create mock pb_ompl interface
         self.pbompl_interface = MockPbOMPLInterface(robot_tr, self.pybullet_client)
