@@ -326,7 +326,7 @@ class GenerativeOptimizationPlanner:
         model_path = os.path.join(
             args_inference.model_dir, "checkpoints", f'{"ema_" if args_train["use_ema"] else ""}model_current.pth'
         )
-        self.model = torch.load(model_path, map_location=tensor_args["device"])
+        self.model = torch.load(model_path, map_location=tensor_args["device"], weights_only=False)
         self.model.eval()
         freeze_torch_model_params(self.model)
 

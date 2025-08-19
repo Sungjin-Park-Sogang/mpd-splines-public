@@ -298,20 +298,22 @@ def experiment(
 
         ############################################################################################################
         # Render sampling results
-        render_results(
-            args_inference,
-            planning_task,
-            q_pos_start,
-            q_pos_goal,
-            results_single_plan,
-            idx_sg,
-            results_dir,
-            render_joint_space_time_iters=render_joint_space_time_iters,
-            render_joint_space_env_iters=render_joint_space_env_iters,
-            render_planning_env_robot_opt_iters=render_env_robot_opt_iters,
-            render_planning_env_robot_trajectories=render_env_robot_trajectories,
-            debug=debug,
-        )
+
+        # 에러가 있으므로 일단 제외
+        # render_results(
+        #     args_inference,
+        #     planning_task,
+        #     q_pos_start,
+        #     q_pos_goal,
+        #     results_single_plan,
+        #     idx_sg,
+        #     results_dir,
+        #     render_joint_space_time_iters=render_joint_space_time_iters,
+        #     render_joint_space_env_iters=render_joint_space_env_iters,
+        #     render_planning_env_robot_opt_iters=render_env_robot_opt_iters,
+        #     render_planning_env_robot_trajectories=render_env_robot_trajectories,
+        #     debug=debug,
+        # )
 
         ############################################################################################################
         # empty memory

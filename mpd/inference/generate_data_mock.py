@@ -114,3 +114,59 @@ class GenerateDataOMPLMock:
         
         if debug:
             print("Using mock GenerateDataOMPL for inference - collision checking will be simplified")
+    
+    def run(
+        self,
+        num_trajectories,
+        joint_position_start,
+        joint_position_goal,
+        planner_allowed_time=4.0,
+        interpolate_num=250,
+        simplify_path=True,
+        fit_bspline=False,
+        bspline_num_control_points=20,
+        bspline_degree=5,
+        bspline_zero_vel_at_start_and_goal=True,
+        bspline_zero_acc_at_start_and_goal=True,
+        max_tries=1000,
+        duration_visualization=2.0,
+        wait_time_after_visualization=4.0,
+        debug=False,
+    ):
+        """
+        Mock implementation of trajectory generation
+        Returns a simple linear interpolation between start and goal
+        """
+        import numpy as np
+        
+        results_dict = {
+            "trajectories": [],
+            "success": True,
+            "planning_time": 0.1  # Mock planning time
+        }
+        
+        # Generate simple linear interpolation trajectories
+        for i in range(num_trajectories):
+            # Create linear interpolation between start and goal
+            trajectory = np.linspace(joint_position_start, joint_position_goal, interpolate_num)
+            results_dict["trajectories"].append(trajectory)
+        
+        if debug:
+            print(f"Mock: Generated {num_trajectories} linear interpolation trajectories")
+        
+        return results_dict
+    
+    def terminate(self):
+        """
+        Mock implementation of termination
+        Cleans up pybullet client if needed
+        """
+        try:
+            if hasattr(self, 'pybullet_client'):
+                self.pybullet_client.disconnect()
+        except Exception as e:
+            if self.debug:
+                print(f"Warning during mock termination: {e}")
+        
+        if self.debug:
+            print("Mock GenerateDataOMPL terminated")
