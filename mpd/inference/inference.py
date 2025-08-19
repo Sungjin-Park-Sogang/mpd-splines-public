@@ -177,6 +177,7 @@ def render_results(
     debug=False,
     **kwargs,
 ):
+    import os
     base_file_name = Path(os.path.basename(__file__)).stem
 
     if results_single_plan.q_trajs_pos_best is not None:
@@ -301,7 +302,48 @@ def render_results(
             
             # Create new PyBullet client for visualization (separate from mock client)
             import pybullet_utils.bullet_client as bc
-            viz_client = bc.BulletClient(connection_mode=p.GUI)
+            import os
+            import contextlib
+            
+            # Completely suppress PyBullet console output
+            @contextlib.contextmanager
+            def suppress_pybullet_output():
+                import sys
+                # Save original streams
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                
+                # Redirect to devnull
+                try:
+                    sys.stdout = open(os.devnull, 'w')
+                    sys.stderr = open(os.devnull, 'w')
+                    
+                    # Also redirect file descriptors for C-level output
+                    old_stdout_fd = os.dup(1)
+                    old_stderr_fd = os.dup(2)
+                    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+                    os.dup2(devnull_fd, 1)
+                    os.dup2(devnull_fd, 2)
+                    
+                    yield
+                    
+                finally:
+                    # Restore file descriptors
+                    os.dup2(old_stdout_fd, 1)
+                    os.dup2(old_stderr_fd, 2)
+                    os.close(old_stdout_fd)
+                    os.close(old_stderr_fd)
+                    os.close(devnull_fd)
+                    
+                    # Restore Python streams
+                    sys.stdout.close()
+                    sys.stderr.close()
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+            
+            with suppress_pybullet_output():
+                viz_client = bc.BulletClient(connection_mode=p.GUI)
+            
             viz_client.setGravity(0, 0, 0)
             
             # Set PyBullet data path to find default URDFs
@@ -320,40 +362,46 @@ def render_results(
             
             # Load ground plane (optional)
             try:
-                ground_id = viz_client.loadURDF("plane.urdf", [0, 0, -0.1])
+                with suppress_pybullet_output():
+                    ground_id = viz_client.loadURDF("plane.urdf", [0, 0, -0.1])
                 print("Loaded ground plane from plane.urdf")
             except:
                 # Create a simple ground plane if URDF not found
                 try:
-                    ground_shape = viz_client.createCollisionShape(
-                        p.GEOM_BOX, halfExtents=[5, 5, 0.1]
-                    )
-                    ground_visual = viz_client.createVisualShape(
-                        p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[0.5, 0.5, 0.5, 1]
-                    )
-                    ground_id = viz_client.createMultiBody(
-                        baseMass=0,
-                        baseCollisionShapeIndex=ground_shape,
-                        baseVisualShapeIndex=ground_visual,
-                        basePosition=[0, 0, -0.1]
-                    )
+                    with suppress_pybullet_output():
+                        ground_shape = viz_client.createCollisionShape(
+                            p.GEOM_BOX, halfExtents=[5, 5, 0.1]
+                        )
+                        ground_visual = viz_client.createVisualShape(
+                            p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[0.5, 0.5, 0.5, 1]
+                        )
+                        ground_id = viz_client.createMultiBody(
+                            baseMass=0,
+                            baseCollisionShapeIndex=ground_shape,
+                            baseVisualShapeIndex=ground_visual,
+                            basePosition=[0, 0, -0.1]
+                        )
                     print("Created custom ground plane")
                 except Exception as e:
                     print(f"Could not create ground plane: {e}")
                     if debug:
                         print(f"Ground plane error details: {e}")
             
-            # Load robot
+            # Load robot (suppress all warning messages)
             robot_id = None
             if hasattr(planning_task.robot, 'robot_urdf_file'):
                 try:
                     robot_urdf_file = planning_task.robot.robot_urdf_file
                     print(f"Loading robot URDF: {robot_urdf_file}")
-                    robot_id = viz_client.loadURDF(
-                        robot_urdf_file,
-                        basePosition=[0, 0, 0],
-                        useFixedBase=True
-                    )
+                    
+                    # Suppress all PyBullet messages during URDF loading
+                    with suppress_pybullet_output():
+                        robot_id = viz_client.loadURDF(
+                            robot_urdf_file,
+                            basePosition=[0, 0, 0],
+                            useFixedBase=True
+                        )
+                    
                     print(f"Successfully loaded robot with {viz_client.getNumJoints(robot_id)} joints")
                 except Exception as e:
                     print(f"Error loading robot URDF: {e}")
