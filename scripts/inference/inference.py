@@ -151,36 +151,36 @@ def experiment(
 
     ################################################################################################################
     # IsaacGym environment and motion planning controller
-    motion_planning_isaac_env = None
-    if run_evaluation_issac_gym:
-        robot_asset_file = planning_task.robot.robot_urdf_file
-        if draw_collision_spheres:
-            robot_asset_file = planning_task.robot.robot_urdf_collision_spheres_file
-        motion_planning_isaac_env = MotionPlanningIsaacGymEnv(
-            planning_task.env,
-            planning_task.robot,
-            asset_root=get_robot_path().as_posix(),
-            robot_asset_file=robot_asset_file.replace(get_robot_path().as_posix() + "/", ""),
-            num_envs=args_inference.n_trajectory_samples,
-            # all_robots_in_one_env=True if n_start_goal_states == 1 else False,
-            all_robots_in_one_env=True,
-            render_isaacgym_viewer=render_isaacgym_viewer,
-            render_camera_global=render_isaacgym_movie,
-            render_camera_global_append_to_recorder=render_isaacgym_movie,
-            sync_viewer_with_real_time=False,
-            show_viewer=render_isaacgym_viewer,
-            camera_global_from_top=True if planning_task.env.dim == 2 else False,
-            add_ground_plane=False,
-            viewer_time_between_steps=torch.diff(planning_task.parametric_trajectory.get_timesteps()[:2]).item(),
-            draw_goal_configuration=True if not train_subset.dataset.context_ee_goal_pose else False,
-            draw_ee_pose_goal=True if train_subset.dataset.context_ee_goal_pose else False,
-            color_robots=False,
-            draw_contact_forces=False,
-            draw_end_effector_frame=False,
-            draw_end_effector_path=True,
-        )
+    # motion_planning_isaac_env = None
+    # if run_evaluation_issac_gym:
+    #     robot_asset_file = planning_task.robot.robot_urdf_file
+    #     if draw_collision_spheres:
+    #         robot_asset_file = planning_task.robot.robot_urdf_collision_spheres_file
+    #     motion_planning_isaac_env = MotionPlanningIsaacGymEnv(
+    #         planning_task.env,
+    #         planning_task.robot,
+    #         asset_root=get_robot_path().as_posix(),
+    #         robot_asset_file=robot_asset_file.replace(get_robot_path().as_posix() + "/", ""),
+    #         num_envs=args_inference.n_trajectory_samples,
+    #         # all_robots_in_one_env=True if n_start_goal_states == 1 else False,
+    #         all_robots_in_one_env=True,
+    #         render_isaacgym_viewer=render_isaacgym_viewer,
+    #         render_camera_global=render_isaacgym_movie,
+    #         render_camera_global_append_to_recorder=render_isaacgym_movie,
+    #         sync_viewer_with_real_time=False,
+    #         show_viewer=render_isaacgym_viewer,
+    #         camera_global_from_top=True if planning_task.env.dim == 2 else False,
+    #         add_ground_plane=False,
+    #         viewer_time_between_steps=torch.diff(planning_task.parametric_trajectory.get_timesteps()[:2]).item(),
+    #         draw_goal_configuration=True if not train_subset.dataset.context_ee_goal_pose else False,
+    #         draw_ee_pose_goal=True if train_subset.dataset.context_ee_goal_pose else False,
+    #         color_robots=False,
+    #         draw_contact_forces=False,
+    #         draw_end_effector_frame=False,
+    #         draw_end_effector_path=True,
+    #     )
 
-        motion_planning_controller_isaac_gym = MotionPlanningControllerIsaacGym(motion_planning_isaac_env)
+    #     motion_planning_controller_isaac_gym = MotionPlanningControllerIsaacGym(motion_planning_isaac_env)
 
     ################################################################################################################
     # Metrics calculator
