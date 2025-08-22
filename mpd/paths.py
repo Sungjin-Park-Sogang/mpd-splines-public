@@ -6,6 +6,6 @@ REPO_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file_
 
 DATA_GENERATION_CFGS_PATH = os.path.join(REPO_PATH, "data_generation_cfgs")
 
-DATASET_BASE_DIR = os.path.join(REPO_PATH, "data_trajectories")
+DATASET_BASE_DIR = os.path.join(REPO_PATH, "data_public/data_trajectories")
 
 SCRIPTS_PATH = os.path.join(REPO_PATH, "scripts")
