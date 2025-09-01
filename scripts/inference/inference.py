@@ -316,6 +316,7 @@ def experiment(
             render_pybullet_trajectories=render_pybullet_trajectories,
             debug=debug,
         )
+        print(f"[INFO] Print results.\n{results_single_plan}")
 
         ############################################################################################################
         # empty memory
