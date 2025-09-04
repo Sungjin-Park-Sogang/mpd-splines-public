@@ -1,0 +1,152 @@
+model_dir_ddpm_bspline: '/isaac-sim/curobo/examples/mpd-splines/scripts/train/logs/1726484688'
+
+# model_dir_cvae_bspline: '/isaac-sim/curobo/examples/mpd-splines/data_public/data_trained_models/launch_train_cvae_models-v04_2024-09-18_08-14-47/generative_model_class___CVAEModel/dataset_subdir___EnvWarehouse-RobotPanda-joint_joint-one-RRTConnect/dataset_file_merged___dataset_merged_doubled.hdf5/context_ee_goal_pose___True/unet_input_dim___32/unet_dim_mults_option___1/context_q_out_dim___128/context_ee_goal_pose_out_dim___128/context_combined_out_dim___128/bspline_num_control_points_desired___24/parametric_trajectory_class___ParametricTrajectoryBspline/0'
+
+# model_dir_ddpm_waypoints: '/isaac-sim/curobo/examples/mpd-splines/data_public/data_trained_models/launch_train_diffusion_models-v04_2024-11-11_10-27-59/generative_model_class___GaussianDiffusionModel/dataset_subdir___EnvWarehouse-RobotPanda-joint_joint-one-RRTConnect/dataset_file_merged___dataset_merged_doubled.hdf5/context_ee_goal_pose___True/unet_input_dim___32/unet_dim_mults_option___1/context_q_out_dim___128/context_ee_goal_pose_out_dim___128/context_combined_out_dim___128/bspline_num_control_points_desired___24/parametric_trajectory_class___ParametricTrajectoryWaypoints/0'
+
+
+model_selection: 'bspline'  # 'bspline', 'waypoints'
+
+#######################################################################################################################
+# CuRobo-specific options
+
+use_curobo: true  # Enable CuRobo backend
+use_curobo_data_gen: true  # Use CuRobo for data generation
+robot_config_file: 'franka.yml'  # CuRobo robot configuration file
+collision_checker_type: 'MESH'  # MESH, PRIMITIVE, BLOX
+collision_cache_size: 1500  # Larger cache for complex warehouse environment
+
+# CuRobo MotionGen configuration overrides for complex environment
+motion_gen_config:
+  num_trajopt_seeds: 12  # More seeds for complex environment
+  num_graph_seeds: 12
+  interpolation_dt: 0.02
+  optimize_dt: true
+  trajopt_tsteps: 32
+  collision_cache:
+    obb: 1500  # Larger cache for warehouse
+    mesh: 1500
+  max_distance: 3.0  # Larger SDF distance for warehouse planning
+
+#######################################################################################################################
+# environment options
+
+min_distance_q_pos_start_goal: 3.5
+
+env_id_replace: null
+
+grasped_object: null
+
+# collision avoidance/checking options - more conservative for warehouse
+obstacle_cutoff_margin_extra: 0.08  # Larger margin for warehouse environment
+margin_for_dense_collision_checking: 0.02
+
+#######################################################################################################################
+# task options
+
+num_T_pts: 128
+trajectory_duration: 12.0  # Longer duration for warehouse navigation
+phase_time_class: 'PhaseTimeLinear'
+
+project_gradient_hierarchy: true  # Enable hierarchical gradients for complex environment
+
+# CuRobo cost hierarchy with higher collision weights for warehouse
+costs:
+  CostTaskSpaceCollisionObjects:
+    weight: 15.0  # Higher weight for warehouse obstacles
+    use_only_on_extra_objects: false
+    safety_margin: 0.03  # Larger safety margin
+    collision_checker_type: 'MESH'
+  CostTaskSpaceCollisionSelf:
+    weight: 2.0  # Higher self-collision weight
+  CostJointSpaceJointLimits:
+    weight: 1.5  # Higher joint limit weight
+  CostTaskSpaceEEGoalPose:
+    weight: 1.0
+  CostJointSpaceVelocity:
+    weight: 0.02  # Slightly higher for smoother motion
+  CostJointSpaceAcceleration:
+    weight: 0.002
+
+# Fallback costs for warehouse environment
+fallback_costs:
+  CostTaskSpaceCollisionObjects:
+    weight: 15.0
+    use_only_on_extra_objects: false
+  CostTaskSpaceCollisionSelf:
+    weight: 2.0
+  CostJointSpaceJointLimits:
+    weight: 1.5
+  CostTaskSpaceEEGoalPose:
+    weight: 1.0
+  CostJointSpaceVelocity:
+    weight: 0.02
+  CostJointSpaceAcceleration:
+    weight: 0.002
+
+n_trajectory_samples: 100
+
+best_trajectory_selection: 'shortest_path_length'
+
+#######################################################################################################################
+# Planner options - tuned for warehouse environment
+
+planner_alg: 'mpd'
+
+diffusion_sampling_method: 'ddim'
+
+compute_costs_with_xrecon: false
+
+n_diffusion_steps_without_noise: 0
+
+extra_mp_steps: 2  # Extra steps for warehouse complexity
+
+# ddim options - more conservative for warehouse
+ddim:
+  t_start_guide_steps_fraction: 0.4  # Start guidance earlier
+  ddim_sampling_timesteps: 20  # More timesteps for complex environment
+  ddim_eta: 0.3  # More deterministic sampling
+  ddim_skip_type: 'quadratic'
+  ddim_scale_grad_prior: 0.2  # Lower scale for stability
+  n_guide_steps: 6  # More guidance steps
+  guide_lr: 0.8  # Lower learning rate for stability
+  max_perturb_x: 0.12  # Smaller perturbations for stability
+  clip_grad: true
+  clip_grad_rule: 'value'
+  max_grad_norm: 0.8
+  max_grad_value: 0.8
+
+# diffusion_prior_then_guide options
+diffusion_prior_then_guide:  &repl
+  n_guide_steps: 15  # More guide steps for warehouse
+  guide_lr: 0.008  # Lower learning rate
+  max_perturb_x: 0.12
+  clip_grad: true
+  clip_grad_rule: 'value'
+  max_grad_norm: 0.8
+  max_grad_value: 0.8
+
+# ddpm options
+ddpm:
+  t_start_guide_steps_fraction: 0.25
+  prior_weight_with_guide: 0.92
+  noise_std: 0.6
+  n_guide_steps: 3
+  guide_lr: 0.008
+  max_perturb_x: 0.12
+  clip_grad: true
+  clip_grad_rule: 'value'
+  max_grad_norm: 0.8
+  max_grad_value: 0.8
+
+gp_prior_then_guide:
+  <<: *repl
+
+knn_prior_then_guide:
+  <<: *repl
+
+cvae_prior_then_guide:
+  <<: *repl
+
+rrtconnect_then_guide:
+  <<: *repl

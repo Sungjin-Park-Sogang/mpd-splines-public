@@ -1,4 +1,4 @@
-import isaacgym
+# import isaacgym
 
 import os
 
@@ -27,9 +27,13 @@ DEBUG = True
 def experiment(
     ########################################################################
     # Dataset
-    dataset_subdir: str = "EnvSimple2D-RobotPointMass2D-joint_joint-one-RRTConnect",
+    # dataset_subdir: str = "EnvSimple2D-RobotPointMass2D-joint_joint-one-RRTConnect",
     # dataset_subdir: str = 'EnvWarehouse-RobotPanda-config_file_v01-joint_joint-one-RRTConnect',
-    dataset_file_merged: str = "dataset_merged_doubled.hdf5",
+    # dataset_file_merged: str = "dataset_merged_doubled.hdf5",
+
+    dataset_subdir: str = '1756887234',
+    dataset_file_merged: str = "dataset.hdf5",
+
     reload_data: bool = False,
     preload_data_to_device: bool = False,
     n_task_samples: int = -1,  # -1 for all
@@ -73,7 +77,8 @@ def experiment(
     batch_size: int = 128,
     lr: float = 3e-4,
     clip_grad: bool = False,
-    num_train_steps: int = 1_000_000,
+    # num_train_steps: int = 1_000_000,
+    num_train_steps: int = 100,
     use_ema: bool = True,
     use_amp: bool = False,
     # Summary parameters
@@ -130,8 +135,10 @@ def experiment(
     full_dataset = train_subset.dataset
 
     if debug:
+        # Render a random valid task (task_id=None lets the dataset pick one),
+        # since task IDs may not start at 0 in generated datasets.
         full_dataset.render(
-            task_id=0,
+            task_id=None,
             render_joint_trajectories=True,
             render_robot_trajectories=True if full_dataset.planning_task.env.dim == 2 else False,
             render_n_robot_trajectories=50,

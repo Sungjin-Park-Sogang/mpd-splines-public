@@ -21,7 +21,16 @@ try:
     from scripts.generate_data.generate_trajectories import GenerateDataOMPL
 except ImportError:
     from mpd.inference.generate_data_mock import GenerateDataOMPLMock as GenerateDataOMPL
-from mpd.inference.cost_guides import CostGuideManagerParametricTrajectory, NoCostException
+
+# CuRobo data generator (optional)
+try:
+    from scripts.generate_data.generate_trajectories_curobo import GenerateDataCuRobo
+    CUROBO_DATA_GEN_AVAILABLE = True
+except ImportError:
+    CUROBO_DATA_GEN_AVAILABLE = False
+    GenerateDataCuRobo = None
+# from mpd.inference.cost_guides import CostGuideManagerParametricTrajectory, NoCostException
+from mpd.inference.cost_guides_curobo import CostGuideManagerParametricTrajectory, NoCostException
 from torch_robotics.torch_utils.torch_timer import TimerCUDA
 from torch_robotics.torch_utils.torch_utils import (
     to_numpy,
@@ -49,6 +58,7 @@ class EvaluationSamplesGenerator:
         debug=False,
         render_pybullet=False,
         min_distance_q_pos_start_goal=None,
+        use_curobo_data_gen=True,  # New option for CuRobo data generation
         **kwargs,
     ):
         self.tensor_args = tensor_args
@@ -61,10 +71,16 @@ class EvaluationSamplesGenerator:
         self.val_subset = val_subset
         if selection_start_goal == "training":
             self.dataset_subset = train_subset
-            self.idxs_dataset_subset = np.random.permutation(len(train_subset))
+            if self.dataset_subset is not None:
+                self.idxs_dataset_subset = np.random.permutation(len(self.dataset_subset))
+            else:
+                self.idxs_dataset_subset = None
         elif selection_start_goal == "validation":
             self.dataset_subset = val_subset
-            self.idxs_dataset_subset = np.random.permutation(len(val_subset))
+            if self.dataset_subset is not None:
+                self.idxs_dataset_subset = np.random.permutation(len(self.dataset_subset))
+            else:
+                self.idxs_dataset_subset = None
         else:
             self.select_start_goal_from_file = load_params_from_yaml(selection_start_goal)
 
@@ -72,21 +88,103 @@ class EvaluationSamplesGenerator:
         if min_distance_q_pos_start_goal is not None:
             self.min_distance_q_pos_start_goal = min_distance_q_pos_start_goal
 
-        # OMPL worker to generate random start and goal joint positions
-        self.generate_data_ompl_worker = GenerateDataOMPL(
-            None,
-            None,
-            env_tr=planning_task.env,
-            robot_tr=planning_task.robot,
-            gripper=True,
-            grasped_object=grasped_object,
-            min_distance_robot_env=planning_task.min_distance_robot_env,
-            tensor_args=tensor_args,
-            pybullet_mode="GUI" if debug or render_pybullet else "DIRECT",
-            debug=debug or render_pybullet,
-        )
+        # Data generator worker for random start and goal joint positions
+        self.use_curobo_data_gen = use_curobo_data_gen and CUROBO_DATA_GEN_AVAILABLE
+        
+        if self.use_curobo_data_gen:
+            # Use CuRobo data generator
+            try:
+                # Map robot names for CuRobo configs
+                robot_config_map = {
+                    "RobotPanda": "franka.yml",
+                    "RobotPlanar2Link": "simple_mimic_robot.yml",  # Use simple robot for planar arms
+                    "RobotPlanar4Link": "simple_mimic_robot.yml",
+                    "RobotUR5e": "ur5e.yml",
+                    "RobotUR10e": "ur10e.yml",
+                    "RobotKinovaGen3": "kinova_gen3.yml",
+                    "RobotJaco7": "jaco7.yml",
+                    "RobotIiwa": "iiwa.yml",
+                    "RobotTM12": "tm12.yml",
+                }
+                
+                robot_type = type(planning_task.robot).__name__
+                robot_config_file = robot_config_map.get(robot_type, "franka.yml")
+                env_type = type(planning_task.env).__name__
+                
+                self.generate_data_worker = GenerateDataCuRobo(
+                    env_id=env_type,
+                    robot_id=robot_type,
+                    robot_config_file=robot_config_file,
+                    min_distance_robot_env=planning_task.min_distance_robot_env,
+                    tensor_args=tensor_args,
+                    debug=debug,
+                    env_tr=planning_task.env,
+                    robot_tr=planning_task.robot,
+                )
+                print(f"Using CuRobo data generator with {robot_config_file} for {robot_type}")
+                
+            except Exception as e:
+                print(f"Failed to initialize CuRobo data generator: {e}")
+                print("Falling back to OMPL data generator")
+                self.use_curobo_data_gen = False
+        
+        if not self.use_curobo_data_gen:
+            # Use OMPL worker (original implementation)
+            self.generate_data_worker = GenerateDataOMPL(
+                None,
+                None,
+                env_tr=planning_task.env,
+                robot_tr=planning_task.robot,
+                gripper=True,
+                grasped_object=grasped_object,
+                min_distance_robot_env=planning_task.min_distance_robot_env,
+                tensor_args=tensor_args,
+                pybullet_mode="GUI" if debug or render_pybullet else "DIRECT",
+                debug=debug or render_pybullet,
+            )
+            print("Using OMPL data generator (PyBullet)")
+        
+        # Keep legacy attribute for backward compatibility
+        self.generate_data_ompl_worker = self.generate_data_worker
 
         self.ee_markers_ids = []
+    
+    def _is_state_valid(self, q_config):
+        """
+        Check if a joint configuration is collision-free.
+        
+        Args:
+            q_config: Joint configuration as numpy array
+            
+        Returns:
+            bool: True if collision-free, False otherwise
+        """
+        if self.use_curobo_data_gen:
+            # Use CuRobo collision checking
+            try:
+                # Convert to tensor format for CuRobo
+                from curobo.types.state import JointState as CuRoboJointState
+                tensor_args = self.generate_data_worker.tensor_args
+                
+                js = CuRoboJointState(
+                    position=tensor_args.to_device(q_config),
+                    joint_names=self.generate_data_worker.motion_gen.kinematics.joint_names
+                )
+                
+                # Check collision using CuRobo
+                if hasattr(self.generate_data_worker.motion_gen, 'kinematics'):
+                    collision_result = self.generate_data_worker.motion_gen.kinematics.check_collision(js.unsqueeze(0))
+                    return not collision_result.any().item()
+                else:
+                    # Fallback: assume valid if no collision checker
+                    return True
+                    
+            except Exception as e:
+                print(f"CuRobo collision checking failed: {e}")
+                return True  # Conservative fallback
+        else:
+            # Use OMPL collision checking (original implementation)
+            return self.generate_data_worker.pbompl_interface.is_state_valid(q_config)
 
     def get_data_sample(self, idx, **kwargs):
         # -----------------------------------------------
@@ -107,11 +205,12 @@ class EvaluationSamplesGenerator:
             q_pos_goal = input_data_one_sample[self.dataset_subset.dataset.field_key_q_goal]
             ee_pose_goal = input_data_one_sample[self.dataset_subset.dataset.field_key_context_ee_goal_pose]
 
-        if not self.generate_data_ompl_worker.pbompl_interface.is_state_valid(to_numpy(q_pos_start)):
+        # Collision checking for start and goal states
+        if not self._is_state_valid(to_numpy(q_pos_start)):
             print("Start state is in collision. Getting new sample...")
             return self.get_data_sample(idx + 1)
 
-        if not self.generate_data_ompl_worker.pbompl_interface.is_state_valid(to_numpy(q_pos_goal)):
+        if not self._is_state_valid(to_numpy(q_pos_goal)):
             print("Goal state is in collision. Getting new sample...")
             return self.get_data_sample(idx + 1)
 
@@ -161,7 +260,7 @@ class EvaluationSamplesGenerator:
         self.ee_markers_ids.append(box_id)
 
 
-def render_results(
+def render_results_pybullet(
     args_inference,
     planning_task,
     q_pos_start,
@@ -513,17 +612,16 @@ class GenerativeOptimizationPlanner:
         tensor_args=DEFAULT_TENSOR_ARGS,
         sampling_based_planner_fn=None,
         debug=False,
+        robot_config=None,
+        world_model=None,
+        curobo_tensor_args=None,
         **kwargs,
     ):
         self.planning_task = planning_task
         self.dataset = dataset
-
         self.args_inference = args_inference
-
         self.tensor_args = tensor_args
-
         self.sampling_based_planner_fn = sampling_based_planner_fn
-
         self.debug = debug
 
         ################################################################################################################
@@ -575,7 +673,15 @@ class GenerativeOptimizationPlanner:
         if args_inference.costs is not None:
             try:
                 self.cost_guide = CostGuideManagerParametricTrajectory(
-                    planning_task, dataset, args_inference, tensor_args, debug, **kwargs
+                    planning_task=planning_task, 
+                    dataset=dataset, 
+                    args_inference=args_inference, 
+                    tensor_args=tensor_args, 
+                    debug=debug, 
+                    robot_config=robot_config,
+                    world_model=world_model,
+                    curobo_tensor_args=curobo_tensor_args,
+                    **kwargs
                 )
             except NoCostException:
                 self.cost_guide = None

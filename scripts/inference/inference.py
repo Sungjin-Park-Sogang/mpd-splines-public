@@ -15,7 +15,7 @@ import torch
 from einops._torch_specific import allow_ops_in_compiled_graph  # requires einops>=0.6.1
 
 from experiment_launcher import single_experiment_yaml, run_experiment
-from mpd.inference.inference import EvaluationSamplesGenerator, GenerativeOptimizationPlanner, render_results
+from mpd.inference.inference import EvaluationSamplesGenerator, GenerativeOptimizationPlanner, render_results_pybullet
 from mpd.metrics.metrics import PlanningMetricsCalculator
 from mpd.utils.loaders import get_planning_task_and_dataset, load_params_from_yaml, save_to_yaml
 # from torch_robotics.isaac_gym_envs.motion_planning_envs import (
@@ -26,6 +26,10 @@ from torch_robotics.robots import RobotPanda
 from torch_robotics.torch_kinematics_tree.utils.files import get_robot_path
 from torch_robotics.torch_utils.seed import fix_random_seed
 from torch_robotics.torch_utils.torch_utils import get_torch_device, to_torch, to_numpy
+
+from curobo.types.base import TensorDeviceType
+from curobo.wrap.model.robot_world import RobotWorld, RobotWorldConfig
+
 
 allow_ops_in_compiled_graph()
 
@@ -39,7 +43,9 @@ def experiment(
     # cfg_inference_path: str = './cfgs/config_EnvPlanar4Link-RobotPlanar4Link_00.yaml',
     # cfg_inference_path: str = './cfgs/config_EnvSimple2D-RobotPointMass2D_00.yaml',
     # cfg_inference_path: str = './cfgs/config_EnvSpheres3D-RobotPanda_00.yaml',
-    cfg_inference_path: str = "./cfgs/config_EnvWarehouse-RobotPanda-config_file_v01_00.yaml",
+    # cfg_inference_path: str = "./cfgs/config_EnvWarehouse-RobotPanda-config_file_v01_00.yaml",
+    cfg_inference_path: str = "./cfgs/config_Test.yaml",
+
     ########################################################################
     # Select the start and goal from the training or validation/test set.
     selection_start_goal: str = "validation",  # training, validation/test
@@ -55,11 +61,10 @@ def experiment(
     render_env_robot_opt_iters: bool = False,
     render_env_robot_trajectories: bool = False,
     render_pybullet: bool = False,
-    render_pybullet_trajectories: bool = True,  # Enable PyBullet rendering instead
-    draw_collision_spheres: bool = False,
-    run_evaluation_issac_gym: bool = False,
-    render_isaacgym_viewer: bool = False,
-    render_isaacgym_movie: bool = False,
+    render_pybullet_trajectories: bool = False,  # Enable PyBullet rendering instead
+    # USD export options
+    save_usd: bool = True,
+    usd_save_path: str = "trajectory_viz_inference",
     ########################################################################
     device: str = "cuda:0",  # cpu, cuda
     debug: bool = False,
@@ -75,7 +80,19 @@ def experiment(
     fix_random_seed(seed)
 
     device = get_torch_device(device)
-    tensor_args = {"device": device, "dtype": torch.float32}
+    # Explicitly set CUDA device index to avoid Warp/PyTorch conflicts
+    if device.type == "cuda":
+        explicit_device = torch.device("cuda", 0)  # Force cuda:0
+        curobo_tensor_args = TensorDeviceType.from_basic("cuda", 0)
+    else:
+        explicit_device = device
+        curobo_tensor_args = TensorDeviceType(device=torch.device("cpu"), dtype=torch.float32)
+    
+    # Keep MPD-compatible tensor_args for backward compatibility  
+    tensor_args = {"device": explicit_device, "dtype": torch.float32}
+
+    print(f"Default tensor args: {tensor_args}")
+    print(f"cuRobo tensor args: {curobo_tensor_args}")
 
     # Save and load the inference configuration
     args_inference = DotMap(load_params_from_yaml(cfg_inference_path))
@@ -133,7 +150,6 @@ def experiment(
     )
 
     ################################################################################################################
-    # Load the generative model planner
     generative_optimization_planner = GenerativeOptimizationPlanner(
         planning_task,
         train_subset.dataset,
@@ -147,40 +163,10 @@ def experiment(
             simplify_path=True,
         ),
         debug=debug,
+        robot_config="franka.yml",
+        world_model="collision_test.yml",
+        curobo_tensor_args=curobo_tensor_args,
     )
-
-    ################################################################################################################
-    # IsaacGym environment and motion planning controller
-    # motion_planning_isaac_env = None
-    # if run_evaluation_issac_gym:
-    #     robot_asset_file = planning_task.robot.robot_urdf_file
-    #     if draw_collision_spheres:
-    #         robot_asset_file = planning_task.robot.robot_urdf_collision_spheres_file
-    #     motion_planning_isaac_env = MotionPlanningIsaacGymEnv(
-    #         planning_task.env,
-    #         planning_task.robot,
-    #         asset_root=get_robot_path().as_posix(),
-    #         robot_asset_file=robot_asset_file.replace(get_robot_path().as_posix() + "/", ""),
-    #         num_envs=args_inference.n_trajectory_samples,
-    #         # all_robots_in_one_env=True if n_start_goal_states == 1 else False,
-    #         all_robots_in_one_env=True,
-    #         render_isaacgym_viewer=render_isaacgym_viewer,
-    #         render_camera_global=render_isaacgym_movie,
-    #         render_camera_global_append_to_recorder=render_isaacgym_movie,
-    #         sync_viewer_with_real_time=False,
-    #         show_viewer=render_isaacgym_viewer,
-    #         camera_global_from_top=True if planning_task.env.dim == 2 else False,
-    #         add_ground_plane=False,
-    #         viewer_time_between_steps=torch.diff(planning_task.parametric_trajectory.get_timesteps()[:2]).item(),
-    #         draw_goal_configuration=True if not train_subset.dataset.context_ee_goal_pose else False,
-    #         draw_ee_pose_goal=True if train_subset.dataset.context_ee_goal_pose else False,
-    #         color_robots=False,
-    #         draw_contact_forces=False,
-    #         draw_end_effector_frame=False,
-    #         draw_end_effector_path=True,
-    #     )
-
-    #     motion_planning_controller_isaac_gym = MotionPlanningControllerIsaacGym(motion_planning_isaac_env)
 
     ################################################################################################################
     # Metrics calculator
@@ -237,32 +223,6 @@ def experiment(
             )
 
         ############################################################################################################
-        # Evaluate and show in IsaacGym
-        # isaacgym_statistics = None
-        # if run_evaluation_issac_gym and results_single_plan.q_trajs_pos_valid is not None:
-        #     ########################
-        #     motion_planning_isaac_env.ee_pose_goal = planning_task.robot.get_EE_pose(
-        #         to_torch(q_pos_goal.unsqueeze(0), device), flatten_pos_quat=True, quat_xyzw=True
-        #     ).squeeze(0)
-
-        #     # Execute all valid trajectories
-        #     if results_single_plan.q_trajs_pos_valid.shape[0] > 0:
-        #         q_trajs_pos = results_single_plan.q_trajs_pos_valid.movedim(1, 0)  # horizon, batch, D
-        #         isaacgym_statistics = motion_planning_controller_isaac_gym.execute_trajectories(
-        #             q_trajs_pos,
-        #             q_pos_starts=q_trajs_pos[0],
-        #             q_pos_goal=q_trajs_pos[-1][0],  # add steps for better visualization
-        #             n_pre_steps=5 if render_isaacgym_viewer or render_isaacgym_movie else 0,
-        #             n_post_steps=5 if render_isaacgym_viewer or render_isaacgym_movie else 0,
-        #             stop_robot_if_in_contact=False,
-        #             make_video=render_isaacgym_movie,
-        #             video_duration=args_inference.trajectory_duration,
-        #             video_path=os.path.join(results_dir, f"isaacgym-{idx_sg:03d}.mp4"),
-        #             make_gif=False,
-        #         )
-        #     results_single_plan.isaacgym_statistics = isaacgym_statistics
-
-        ############################################################################################################
         # Compute motion planning metrics
         print(f"\n----------------METRICS----------------")
         results_single_plan.metrics = planning_metrics_calculator.compute_metrics(results_single_plan)
@@ -271,11 +231,9 @@ def experiment(
         print(f"t_generator: {results_single_plan.t_generator:.3f} sec")
         print(f"t_guide: {results_single_plan.t_guide:.3f} sec")
 
-        # print(f"isaacgym_statistics:")
-        # pprint(results_single_plan.isaacgym_statistics)
-
         print(f"metrics:")
-        pprint(results_single_plan.metrics)
+        # 출력이 너무 길어
+        # print(results_single_plan.metrics)
 
         # Save data
         results_single_plan_to_save = results_single_plan
@@ -301,22 +259,45 @@ def experiment(
         # Render sampling results
 
         # Render sampling results with enhanced PyBullet support
-        render_results(
-            args_inference,
-            planning_task,
-            q_pos_start,
-            q_pos_goal,
-            results_single_plan,
-            idx_sg,
-            results_dir,
-            render_joint_space_time_iters=render_joint_space_time_iters,
-            render_joint_space_env_iters=render_joint_space_env_iters,
-            render_planning_env_robot_opt_iters=render_env_robot_opt_iters,
-            render_planning_env_robot_trajectories=render_env_robot_trajectories,
-            render_pybullet_trajectories=render_pybullet_trajectories,
-            debug=debug,
-        )
-        print(f"[INFO] Print results.\n{results_single_plan}")
+        if render_pybullet_trajectories:
+            render_results_pybullet(
+                args_inference,
+                planning_task,
+                q_pos_start,
+                q_pos_goal,
+                results_single_plan,
+                idx_sg,
+                results_dir,
+                render_joint_space_time_iters=render_joint_space_time_iters,
+                render_joint_space_env_iters=render_joint_space_env_iters,
+                render_planning_env_robot_opt_iters=render_env_robot_opt_iters,
+                render_planning_env_robot_trajectories=render_env_robot_trajectories,
+                render_pybullet_trajectories=render_pybullet_trajectories,
+                debug=debug,
+            )
+        
+        # Optionally save the best trajectory as USD for replay
+        try:
+            if save_usd and results_single_plan.q_trajs_pos_best is not None:
+                from mpd.plotting.visualize_trajectories_curobo import save_trajectory_usd
+
+                if results_single_plan.q_trajs_pose_best is not None:
+                    q_traj_best = results_single_plan.q_trajs_pos_best
+
+                save_path_usd = os.path.join(results_dir, f"{usd_save_path}_{idx_sg:04d}.usd")  
+
+                save_trajectory_usd(
+                    q_traj=q_traj_best,
+                    robot_file="franka.yml",
+                    world_file="collision_test.yml",
+                    save_path=save_path_usd,
+                    visualize_robot_spheres=False,
+                )
+                print(f"\u2713 Saved USD: {save_path_usd}")
+        except Exception as e:
+            print(f"[WARN] Failed to save USD for trajectory {idx_sg}: {e}")
+        
+        # print(f"[INFO] Print results.\n{results_single_plan}")
 
         ############################################################################################################
         # empty memory
@@ -327,10 +308,6 @@ def experiment(
     ################################################################################################################
     # clean up
     evaluation_samples_generator.generate_data_ompl_worker.terminate()
-    if motion_planning_isaac_env is not None:
-        motion_planning_isaac_env.clean_up()
-        del motion_planning_isaac_env
-        del motion_planning_controller_isaac_gym
     gc.collect()
     torch.cuda.empty_cache()
 
